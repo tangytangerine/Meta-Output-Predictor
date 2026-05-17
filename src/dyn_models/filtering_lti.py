@@ -11,13 +11,18 @@ class FilterSim:
         self.sigma_v = sigma_v
 
         self.n_noise = n_noise
+        
+        gen = np.random.default_rng()
+        lims = np.array([0.4, 0.7])
 
         if tri:
-            A = np.diag(np.random.rand(nx)*2-1)*0.95
-            A[np.triu_indices(nx,1)] = np.random.rand((nx**2+nx)//2-nx) * 2 - 1
+            A = np.diag(gen.uniform(lims[0], lims[-1], (nx)))
+            A[np.triu_indices(nx,1)] = gen.uniform(lims[0], lims[-1], (nx**2+nx)//2-nx)
             self.A = A
         else:
-            A = np.random.rand(nx, nx)
+            # A = np.random.rand(nx, nx)
+            A = gen.uniform(0, 0.5, (nx, nx))
+            # A = gen.normal(0, 0.2, (nx, nx))+np.pi/2
             A /= np.max(np.abs(np.linalg.eigvals(A))) 
             self.A = A * 0.95
 
@@ -26,16 +31,24 @@ class FilterSim:
     def simulate(self, traj_len, x0=None):
         ny, nx = self.C.shape
         n_noise = self.n_noise
+        mean_v, mean_w = np.random.normal(0,1,ny), np.random.normal(0,1,nx)
+        mean_v, mean_w = 0, 0
         xs = [np.random.randn(nx) if x0 is None else x0]
-        vs = [np.random.randn(ny) * self.sigma_v for _ in range(n_noise)]
-        ws = [np.random.randn(nx) * self.sigma_w for _ in range(n_noise)]
+        vs = [(np.random.randn(ny) + mean_v) * self.sigma_v for _ in range(n_noise)]
+        ws = [(np.random.randn(nx) + mean_w) * self.sigma_w for _ in range(n_noise)]
         ys = [self.C @ xs[0]+ sum(vs)]
         for _ in range(traj_len):
             x = self.A @ xs[-1] + sum(ws[-n_noise:])
-            xs.append(x)
-            ws.append(np.random.randn(nx) * self.sigma_w)
             
-            vs.append(np.random.randn(ny) * self.sigma_v)
+            lims = np.array([0.4, 0.7])
+            A = np.diag(np.random.uniform(lims[0], lims[-1], (nx)))
+            A[np.triu_indices(nx,1)] = np.random.uniform(lims[0], lims[-1], (nx**2+nx)//2-nx)
+            x = A @ xs[-1] + sum(ws[-n_noise:])
+            
+            xs.append(x)
+            ws.append((np.random.randn(nx) + mean_w) * self.sigma_w)
+            
+            vs.append((np.random.randn(ny) + mean_v) * self.sigma_v)
             y = self.C @ xs[-1] + sum(vs[-n_noise:])
             ys.append(y)
         return np.array(xs).astype("f"), np.array(ys).astype("f")

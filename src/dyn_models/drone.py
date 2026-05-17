@@ -3,23 +3,23 @@ import sympy
 
 
 class DroneConfig:
-    min_speed = -4
-    max_speed = 4
+    min_speed = -10000 #-4
+    max_speed = 10000 #4
 
-    xmin = -20
-    xmax = 20
-    zmin = -20
-    zmax = 20
-    phimin = -np.pi/3
-    phimax = np.pi/3
-    vxmin = -2
-    vxmax = 2
-    vzmin = -2
-    vzmax = 2
-    phidotmin = -np.pi/4
-    phidotmax = np.pi/4
+    xmin = -10000 #-20
+    xmax = 10000 #20
+    zmin = -10000 #-20
+    zmax = 10000 #20
+    phimin = -10000 #-np.pi/3
+    phimax = 10000 #np.pi/3
+    vxmin = -10000 #-2
+    vxmax = 10000 #2
+    vzmin = -10000 #-2
+    vzmax = 10000 #2
+    phidotmin = -10000 #-np.pi/4
+    phidotmax = 10000 #np.pi/4
 
-    g = 10
+    g = 9.81
 
 
 class DroneState:

@@ -1,8 +1,10 @@
 import logging
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import pytorch_lightning as pl
 import torch
-import os
+if torch.xpu.is_available(): import intel_extension_for_pytorch as ipex
 
 from core import Config, training
 from models import GPT2
@@ -12,45 +14,117 @@ from utils import RLS, plot_errs
 import matplotlib.pyplot as plt
 import numpy as np
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+import concurrent.futures
+import multiprocessing
+
+device = "" 
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.xpu.is_available():
+    device = "xpu"
+else: 
+    device = "cpu"
+    
 logger = logging.getLogger(__name__)
 config = Config()
 config.parse_args()
 
-model = GPT2.load_from_checkpoint(config.ckpt_path,
+from create_plots_all import latest_ckpt
+
+# model = GPT2.load_from_checkpoint("../outputs/GPT2/Train_04_07/checkpoints/step=10000.ckpt",
+#                                   n_dims_in=config.n_dims_in, n_positions=config.n_positions,
+#                                   n_dims_out=config.n_dims_out, n_embd=config.n_embd,
+#                                   n_layer=config.n_layer, n_head=config.n_head).eval().to(device)
+
+model2 = GPT2.load_from_checkpoint("../outputs/GPT2/Train_04_07/checkpoints/step=10000.ckpt",
                                   n_dims_in=config.n_dims_in, n_positions=config.n_positions,
                                   n_dims_out=config.n_dims_out, n_embd=config.n_embd,
                                   n_layer=config.n_layer, n_head=config.n_head).eval().to(device)
 
+# model3 = GPT2.load_from_checkpoint("../outputs/GPT2/Train_04_07_Gaußmean_025_0/checkpoints/step=10000.ckpt",
+#                                   n_dims_in=config.n_dims_in, n_positions=config.n_positions,
+#                                   n_dims_out=config.n_dims_out, n_embd=config.n_embd,
+#                                   n_layer=config.n_layer, n_head=config.n_head).eval().to(device)
 
-ys, sim_objs, us = [], [], []
-for i in range(1000):
-    if config.dataset_typ == "drone":
-         sim_obj, entry = generate_drone_sample(config.n_positions)
-         us.append(entry["actions"])
-    else:
-        if config.changing:
-            sim_obj, entry = generate_changing_lti_sample(config.n_positions, config.nx, config.ny, n_noise=config.n_noise)
-        else:
-            sim_obj, entry = generate_lti_sample(config.dataset_typ, config.n_positions, 
-                                            config.nx, config.ny, n_noise=config.n_noise)
-    ys.append(entry["obs"])
-    sim_objs.append(sim_obj)
-ys = np.array(ys)
+# model4 = GPT2.load_from_checkpoint("../outputs/GPT2/Train_04_07_Gaußmean_025_1/checkpoints/step=10000.ckpt",
+#                                   n_dims_in=config.n_dims_in, n_positions=config.n_positions,
+#                                   n_dims_out=config.n_dims_out, n_embd=config.n_embd,
+#                                   n_layer=config.n_layer, n_head=config.n_head).eval().to(device)
+
+# model5 = GPT2.load_from_checkpoint("../outputs/GPT2/Train_04_07_Gaußmean_neg025_1/checkpoints/step=10000.ckpt",
+#                                   n_dims_in=config.n_dims_in, n_positions=config.n_positions,
+#                                   n_dims_out=config.n_dims_out, n_embd=config.n_embd,
+#                                   n_layer=config.n_layer, n_head=config.n_head).eval().to(device)
+
+
+model = GPT2.load_from_checkpoint("../outputs/GPT2/260202_181924.a2d948/checkpoints/step=10000.ckpt",
+                                   n_dims_in=config.n_dims_in, n_positions=config.n_positions,
+                                   n_dims_out=config.n_dims_out, n_embd=config.n_embd,
+                                   n_layer=config.n_layer, n_head=config.n_head).eval().to(device)
+
+def processys(ys, n):
+    ys = ys[:,n:,:]
+    for i in range(n):
+        ys = np.concatenate([ys, ys[:,-1:,:]], axis=1)
+    return ys
+
+ys, sim_objs, us = [], [], [] 
+for i in range(1000): 
+    if config.dataset_typ == "drone": 
+        m, l, J = (2, 10), (11, 15), (1, 5) 
+        sim_obj, entry = generate_drone_sample(config.n_positions, m, l, J) 
+        us.append(entry["actions"]) 
+    else: 
+        if config.changing: 
+            sim_obj, entry = generate_changing_lti_sample(config.n_positions, config.nx, config.ny, n_noise=config.n_noise) 
+        else: 
+            sim_obj, entry = generate_lti_sample(config.dataset_typ, config.n_positions, config.nx, config.ny, sigma_w=config.sigma_w, sigma_v=config.sigma_w, n_noise=config.n_noise) 
+    ys.append(entry["obs"]) 
+    sim_objs.append(sim_obj) 
+                
+ys = np.array(ys) 
 us = np.array(us)
-
+# ys_cut = processys(ys, 50)
+    
 with torch.no_grad():
     I = ys[:, :-1]
     if config.dataset_typ == "drone":
         I = np.concatenate([I, us], axis=-1)
 
-    if config.changing:
+    if config.changing: # True and config.dataset_typ != "drone": #
         preds_tf = model.predict_ar(ys[:, :-1])
+        preds_tf2 = model2.predict_ar(ys[:, :-1])
+        # preds_tf3 = model3.predict_ar(ys[:, :-1])
+        # preds_tf4 = model4.predict_ar(ys[:, :-1])
+        # preds_tf5 = model5.predict_ar(ys[:, :-1])
+        # preds_tf_cut = model.predict_ar(ys_cut[:, :-1])
     else:
         _, preds_tf = model.predict_step({"xs":torch.from_numpy(I).to(device)})
         preds_tf = preds_tf["preds"].cpu().numpy()
         preds_tf = np.concatenate([np.zeros((preds_tf.shape[0],1,preds_tf.shape[-1])),preds_tf], axis=1)
+        
+        _, preds_tf2 = model2.predict_step({"xs":torch.from_numpy(I).to(device)})
+        preds_tf2 = preds_tf2["preds"].cpu().numpy()
+        preds_tf2 = np.concatenate([np.zeros((preds_tf2.shape[0],1,preds_tf2.shape[-1])),preds_tf2], axis=1)
+        
+        # _, preds_tf3 = model3.predict_step({"xs":torch.from_numpy(I).to(device)})
+        # preds_tf3 = preds_tf3["preds"].cpu().numpy()
+        # preds_tf3 = np.concatenate([np.zeros((preds_tf3.shape[0],1,preds_tf3.shape[-1])),preds_tf3], axis=1)
+        
+        # _, preds_tf4 = model4.predict_step({"xs":torch.from_numpy(I).to(device)})
+        # preds_tf4 = preds_tf4["preds"].cpu().numpy()
+        # preds_tf4 = np.concatenate([np.zeros((preds_tf4.shape[0],1,preds_tf4.shape[-1])),preds_tf4], axis=1)
+        
+        # _, preds_tf5 = model5.predict_step({"xs":torch.from_numpy(I).to(device)})
+        # preds_tf5 = preds_tf5["preds"].cpu().numpy()
+        # preds_tf5 = np.concatenate([np.zeros((preds_tf5.shape[0],1,preds_tf5.shape[-1])),preds_tf5], axis=1)
 errs_tf = np.linalg.norm((ys-preds_tf), axis=-1)
+errs_tf2 = np.linalg.norm((ys-preds_tf2), axis=-1)
+# errs_tf3 = np.linalg.norm((ys-preds_tf3), axis=-1)
+# errs_tf4 = np.linalg.norm((ys-preds_tf4), axis=-1)
+# errs_tf5 = np.linalg.norm((ys-preds_tf5), axis=-1)
+
+# errs_tf_cut = np.linalg.norm((ys_cut-preds_tf_cut), axis=-1)
 
 n_noise = config.n_noise
 if config.dataset_typ == "drone":
@@ -59,30 +133,34 @@ else:
     preds_kf = np.array([apply_kf(fsim, _ys, sigma_w=fsim.sigma_w*np.sqrt(n_noise), sigma_v=fsim.sigma_v*np.sqrt(n_noise)) for fsim, _ys in zip(sim_objs, ys[:, :-1])])
 errs_kf = np.linalg.norm((ys-preds_kf), axis=-1)
 
-err_lss = [errs_kf, errs_tf]
-names = ["Kalman", "MOP"]
+err_lss = [errs_kf, errs_tf, errs_tf2]
+names = ["Kalman", "MOP Stoc", "MOP"]
 
-if config.dataset_typ != "drone":
-    preds_rls = []
-    for _ys in ys:
-        ls = [np.zeros(config.ny)]
-        rls = RLS(config.nx, config.ny)
-        for i in range(len(_ys)-1):
-            if i < 2:
-                ls.append(_ys[i])
-            else:
-                rls.add_data(_ys[i-2:i].flatten(), _ys[i])
-                ls.append(rls.predict(_ys[i-1:i+1].flatten()))
+# err_lss = [errs_tf, errs_tf2, errs_tf3, errs_tf4, errs_tf5]
+# names = ["μ = 0", "μ = N(0, 1)", "μ = 0.25", "μ = N(0.25, 1)", "μ = N(-0.25, 1)"]
 
-        preds_rls.append(ls)
-    preds_rls = np.array(preds_rls)
-    errs_rls = np.linalg.norm(ys-preds_rls, axis=-1)
-    err_lss.append(errs_rls)
-    names.append("OLS")
+# if config.dataset_typ != "drone":
+#     preds_rls = []
+#     for _ys in ys:
+#         ls = [np.zeros(config.ny)]
+#         rls = RLS(config.nx, config.ny)
+#         for i in range(len(_ys)-1):
+#             if i < 2:
+#                 ls.append(_ys[i])
+#             else:
+#                 rls.add_data(_ys[i-2:i].flatten(), _ys[i])
+#                 ls.append(rls.predict(_ys[i-1:i+1].flatten()))
+
+#         preds_rls.append(ls)
+#     preds_rls = np.array(preds_rls)
+#     errs_rls = np.linalg.norm(ys-preds_rls, axis=-1)
+#     err_lss.append(errs_rls)
+#     names.append("OLS")
 
 
 fig = plt.figure(figsize=(15,9))
 ax = fig.add_subplot(111)
+ax.set_title("Time-Varying A", fontsize=32)
 plot_errs(names, err_lss, ax=ax, shade=config.dataset_typ != "drone")
 os.makedirs("../figures", exist_ok=True)
 fig.savefig(f"../figures/{config.dataset_typ}" + ("-changing" if config.changing else ""))
