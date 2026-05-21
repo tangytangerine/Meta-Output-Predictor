@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import sympy
 from filterpy.kalman import KalmanFilter
 
@@ -23,7 +24,7 @@ class FilterSim:
             # A = np.random.rand(nx, nx)
             A = gen.uniform(0, 0.5, (nx, nx))
             # A = gen.normal(0, 0.2, (nx, nx))+np.pi/2
-            A /= np.max(np.abs(np.linalg.eigvals(A))) 
+            A /= np.max(np.abs(np.linalg.eigvals(A)))
             self.A = A * 0.95
 
         self.C = np.eye(nx) if nx == ny else self.construct_C(self.A, ny)
@@ -37,13 +38,14 @@ class FilterSim:
         vs = [(np.random.randn(ny) + mean_v) * self.sigma_v for _ in range(n_noise)]
         ws = [(np.random.randn(nx) + mean_w) * self.sigma_w for _ in range(n_noise)]
         ys = [self.C @ xs[0]+ sum(vs)]
+        
+        ulims = np.array([0, 1])
+        us = []
         for _ in range(traj_len):
-            x = self.A @ xs[-1] + sum(ws[-n_noise:])
+            u = np.random.uniform(ulims[0], ulims[1], size=nx)
+            us.append(u)
             
-            lims = np.array([0.4, 0.7])
-            A = np.diag(np.random.uniform(lims[0], lims[-1], (nx)))
-            A[np.triu_indices(nx,1)] = np.random.uniform(lims[0], lims[-1], (nx**2+nx)//2-nx)
-            x = A @ xs[-1] + sum(ws[-n_noise:])
+            x = self.A @ xs[-1] + sum(ws[-n_noise:]) + u
             
             xs.append(x)
             ws.append((np.random.randn(nx) + mean_w) * self.sigma_w)
@@ -51,7 +53,7 @@ class FilterSim:
             vs.append((np.random.randn(ny) + mean_v) * self.sigma_v)
             y = self.C @ xs[-1] + sum(vs[-n_noise:])
             ys.append(y)
-        return np.array(xs).astype("f"), np.array(ys).astype("f")
+        return np.array(xs).astype("f"), np.array(ys).astype("f"), np.array(us).astype("f")
 
     @staticmethod
     def construct_C(A, ny):
@@ -90,8 +92,8 @@ def apply_kf(fsim, ys, x0=None, P0=None, sigma_w=None, sigma_v=None, return_obj=
     
 def _generate_lti_sample(dataset_typ, n_positions, nx, ny, sigma_w=1e-1, sigma_v=1e-1, n_noise=1):
     fsim = FilterSim(nx, ny, sigma_w, sigma_v, tri="upperTriA" == dataset_typ, n_noise=n_noise)
-    states, obs = fsim.simulate(n_positions)
-    return fsim, {"states": states, "obs": obs, "A": fsim.A, "C": fsim.C}
+    states, obs, us = fsim.simulate(n_positions)
+    return fsim, {"states": states, "inputs" : us, "obs": obs, "A": fsim.A, "C": fsim.C}
     
 def generate_lti_sample(dataset_typ, n_positions, nx, ny, sigma_w=1e-1, sigma_v=1e-1, n_noise=1):
     while True:

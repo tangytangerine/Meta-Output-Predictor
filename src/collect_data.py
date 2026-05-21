@@ -31,6 +31,7 @@ if __name__ == "__main__":
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for sample in tqdm(executor.map(generate_sample, range(num_tasks)),
                                total=num_tasks):
+                sample.pop("inputs", None)
                 samples.append(sample)
 
         os.makedirs("../data", exist_ok=True)

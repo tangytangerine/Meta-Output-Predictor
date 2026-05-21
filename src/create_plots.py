@@ -68,7 +68,7 @@ def processys(ys, n):
         ys = np.concatenate([ys, ys[:,-1:,:]], axis=1)
     return ys
 
-ys, sim_objs, us = [], [], [] 
+exs, ys, sim_objs, us = [], [], [], [] 
 for i in range(1000): 
     if config.dataset_typ == "drone": 
         m, l, J = (2, 10), (11, 15), (1, 5) 
@@ -76,9 +76,12 @@ for i in range(1000):
         us.append(entry["actions"]) 
     else: 
         if config.changing: 
-            sim_obj, entry = generate_changing_lti_sample(config.n_positions, config.nx, config.ny, n_noise=config.n_noise) 
+            sim_obj, entry = generate_changing_lti_sample(config.n_positions, config.nx, config.ny, n_noise=config.n_noise)
+            us.append(entry["inputs"])
         else: 
-            sim_obj, entry = generate_lti_sample(config.dataset_typ, config.n_positions, config.nx, config.ny, sigma_w=config.sigma_w, sigma_v=config.sigma_w, n_noise=config.n_noise) 
+            sim_obj, entry = generate_lti_sample(config.dataset_typ, config.n_positions, config.nx, config.ny, sigma_w=config.sigma_w, sigma_v=config.sigma_w, n_noise=config.n_noise)
+            us.append(entry["inputs"])
+    exs.append(entry["states"])
     ys.append(entry["obs"]) 
     sim_objs.append(sim_obj) 
                 

@@ -22,6 +22,8 @@ class Config(object, metaclass=Singleton):
     nx = 10
     ny = 5
     n_noise = 1
+    sigma_w = 1e-1
+    sigma_v = 1e-1
 
     # Training settings
     train_steps = 10000  
@@ -37,7 +39,7 @@ class Config(object, metaclass=Singleton):
     n_layer = 12
     n_head = 8
     n_dims_in = 5
-    n_dims_out = 10
+    n_dims_out = 5
     changing = False # only used for plotting
 
     # Optimizer parameters
