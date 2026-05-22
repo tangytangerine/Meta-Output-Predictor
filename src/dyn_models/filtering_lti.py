@@ -14,7 +14,7 @@ class FilterSim:
         self.n_noise = n_noise
         
         gen = np.random.default_rng()
-        lims = np.array([0.4, 0.7])
+        lims = np.array([0.2, 0.9])
 
         if tri:
             A = np.diag(gen.uniform(lims[0], lims[-1], (nx)))

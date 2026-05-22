@@ -1,12 +1,15 @@
 import logging
+import os
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import pytorch_lightning as pl
 import torch
 
+# if torch.xpu.is_available() and not torch.cuda.is_available(): import intel_extension_for_pytorch as ipex
+
 from core import Config, training
 from models import GPT2
 from datasources import FilterDataset, DataModuleWrapper
-import os
 
 logger = logging.getLogger(__name__)
 config = Config()
@@ -30,4 +33,5 @@ trainer = pl.Trainer(callbacks=callbacks,
                      gradient_clip_algorithm=config.gradient_clip_algorithm,
                      gradient_clip_val=config.gradient_clip_val,
                      log_every_n_steps=50, max_epochs=config.num_epochs)
-trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
+if __name__ == '__main__':
+    trainer.fit(model, datamodule=datamodule, ckpt_path=ckpt_path)
