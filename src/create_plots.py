@@ -104,7 +104,8 @@ for i in range(1000):
     exs.append(entry["states"])
     ys.append(entry["obs"]) 
     sim_objs.append(sim_obj) 
-                
+          
+exs = np.array(exs)      
 ys = np.array(ys) 
 us = np.array(us)
 # ys_cut = processys(ys, 50)
@@ -149,15 +150,15 @@ errs_tf = np.linalg.norm((exs-preds_tf), axis=-1)
 
 # errs_tf_cut = np.linalg.norm((ys_cut-preds_tf_cut), axis=-1)
 
-n_noise = config.n_noise
-if config.dataset_typ == "drone":
-    preds_kf = np.array([apply_ekf_drone(dsim, _ys, _us) for dsim, _ys, _us in zip(sim_objs, ys, us)])
-else:
-    preds_kf = np.array([apply_kf(fsim, _ys, sigma_w=fsim.sigma_w*np.sqrt(n_noise), sigma_v=fsim.sigma_v*np.sqrt(n_noise)) for fsim, _ys in zip(sim_objs, ys[:, :-1])])
-errs_kf = np.linalg.norm((ys-preds_kf), axis=-1)
+# n_noise = config.n_noise
+# if config.dataset_typ == "drone":
+#     preds_kf = np.array([apply_ekf_drone(dsim, _ys, _us) for dsim, _ys, _us in zip(sim_objs, ys, us)])
+# else:
+#     preds_kf = np.array([apply_kf(fsim, _ys, sigma_w=fsim.sigma_w*np.sqrt(n_noise), sigma_v=fsim.sigma_v*np.sqrt(n_noise)) for fsim, _ys in zip(sim_objs, ys[:, :-1])])
+# errs_kf = np.linalg.norm((ys-preds_kf), axis=-1)
 
-err_lss = [errs_kf, errs_tf]
-names = ["Kalman", "MOP"]
+err_lss = [errs_tf]
+names = ["MOP"]
 
 # err_lss = [errs_tf, errs_tf2, errs_tf3, errs_tf4, errs_tf5]
 # names = ["μ = 0", "μ = N(0, 1)", "μ = 0.25", "μ = N(0.25, 1)", "μ = N(-0.25, 1)"]
@@ -185,5 +186,8 @@ fig = plt.figure(figsize=(15,9))
 ax = fig.add_subplot(111)
 ax.set_title("Time-Varying A", fontsize=32)
 plot_errs(names, err_lss, ax=ax, shade=config.dataset_typ != "drone")
-os.makedirs("../figures", exist_ok=True)
-fig.savefig(f"../figures/{config.dataset_typ}" + ("-changing" if config.changing else ""))
+
+plt.figure()
+plt.plot(preds_tf[1,:-1,1])
+# os.makedirs("../figures", exist_ok=True)
+# fig.savefig(f"../figures/{config.dataset_typ}" + ("-changing" if config.changing else ""))

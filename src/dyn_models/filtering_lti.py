@@ -43,6 +43,7 @@ class FilterSim:
         us = []
         for _ in range(traj_len):
             u = np.random.uniform(ulims[0], ulims[1], size=nx)
+            u = np.zeros((nx))
             us.append(u)
             
             x = self.A @ xs[-1] + sum(ws[-n_noise:]) + u
