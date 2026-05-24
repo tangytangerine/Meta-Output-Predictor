@@ -32,6 +32,8 @@ if __name__ == "__main__":
             for sample in tqdm(executor.map(generate_sample, range(num_tasks)),
                                total=num_tasks):
                 sample.pop("inputs", None)
+                sample.pop("statesCL", None)
+                sample.pop("obsCL", None)
                 samples.append(sample)
 
         os.makedirs("../data", exist_ok=True)

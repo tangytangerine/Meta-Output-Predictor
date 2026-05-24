@@ -35,26 +35,32 @@ class FilterSim:
         mean_v, mean_w = np.random.normal(0,1,ny), np.random.normal(0,1,nx)
         mean_v, mean_w = 0, 0
         xs = [np.random.randn(nx) if x0 is None else x0]
+        xs_cl = [np.random.randn(nx) if x0 is None else x0]
         vs = [(np.random.randn(ny) + mean_v) * self.sigma_v for _ in range(n_noise)]
         ws = [(np.random.randn(nx) + mean_w) * self.sigma_w for _ in range(n_noise)]
         ys = [self.C @ xs[0]+ sum(vs)]
+        ys_cl = [self.C @ xs_cl[0]+ sum(vs)]
         
         ulims = np.array([0, 1])
         us = []
         for _ in range(traj_len):
             u = np.random.uniform(ulims[0], ulims[1], size=nx)
-            u = np.zeros((nx))
+            # u = np.zeros((nx))
             us.append(u)
             
+            x_cl = self.A @ xs_cl[-1] + sum(ws[-n_noise:])
             x = self.A @ xs[-1] + sum(ws[-n_noise:]) + u
             
+            xs_cl.append(x_cl)
             xs.append(x)
             ws.append((np.random.randn(nx) + mean_w) * self.sigma_w)
             
             vs.append((np.random.randn(ny) + mean_v) * self.sigma_v)
+            y_cl = self.C @ xs_cl[-1] + sum(vs[-n_noise:])
             y = self.C @ xs[-1] + sum(vs[-n_noise:])
+            ys_cl.append(y_cl)
             ys.append(y)
-        return np.array(xs).astype("f"), np.array(ys).astype("f"), np.array(us).astype("f")
+        return np.array(xs).astype("f"), np.array(ys).astype("f"), np.array(us).astype("f"), np.array(xs_cl).astype("f"), np.array(ys_cl).astype("f")
 
     @staticmethod
     def construct_C(A, ny):
@@ -93,8 +99,8 @@ def apply_kf(fsim, ys, x0=None, P0=None, sigma_w=None, sigma_v=None, return_obj=
     
 def _generate_lti_sample(dataset_typ, n_positions, nx, ny, sigma_w=1e-1, sigma_v=1e-1, n_noise=1):
     fsim = FilterSim(nx, ny, sigma_w, sigma_v, tri="upperTriA" == dataset_typ, n_noise=n_noise)
-    states, obs, us = fsim.simulate(n_positions)
-    return fsim, {"states": states, "inputs" : us, "obs": obs, "A": fsim.A, "C": fsim.C}
+    states, obs, us, states_cl, obs_cl = fsim.simulate(n_positions)
+    return fsim, {"states": states, "inputs" : us, "obs": obs, "statesCL": states_cl, "obsCL": obs_cl, "A": fsim.A, "C": fsim.C}
     
 def generate_lti_sample(dataset_typ, n_positions, nx, ny, sigma_w=1e-1, sigma_v=1e-1, n_noise=1):
     while True:

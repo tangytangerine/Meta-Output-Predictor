@@ -88,7 +88,8 @@ def processys(ys, n):
         ys = np.concatenate([ys, ys[:,-1:,:]], axis=1)
     return ys
 
-exs, ys, sim_objs, us = [], [], [], [] 
+exs, ys, sim_objs, us = [], [], [], []
+exs_cl, ys_cl = [], []
 for i in range(1000): 
     if config.dataset_typ == "drone": 
         m, l, J = (2, 10), (11, 15), (1, 5) 
@@ -102,12 +103,15 @@ for i in range(1000):
             sim_obj, entry = generate_lti_sample(config.dataset_typ, config.n_positions, config.nx, config.ny, sigma_w=config.sigma_w, sigma_v=config.sigma_w, n_noise=config.n_noise)
             us.append(entry["inputs"])
     exs.append(entry["states"])
-    ys.append(entry["obs"]) 
+    ys.append(entry["obs"])
+    exs_cl.append(entry["statesCL"])
+    ys_cl.append(entry["obsCL"])
     sim_objs.append(sim_obj) 
           
 exs = np.array(exs)      
 ys = np.array(ys) 
 us = np.array(us)
+exs_cl, ys_cl = np.array(exs_cl), np.array(ys_cl)
 # ys_cut = processys(ys, 50)
     
 with torch.no_grad():
@@ -148,6 +152,8 @@ errs_tf = np.linalg.norm((exs-preds_tf), axis=-1)
 # errs_tf4 = np.linalg.norm((ys-preds_tf4), axis=-1)
 # errs_tf5 = np.linalg.norm((ys-preds_tf5), axis=-1)
 
+err_tf_cl = np.linalg.norm((exs_cl[:,:-1,:]-(preds_tf[:,:-1,:]-us)), axis=-1)
+
 # errs_tf_cut = np.linalg.norm((ys_cut-preds_tf_cut), axis=-1)
 
 # n_noise = config.n_noise
@@ -187,7 +193,9 @@ ax = fig.add_subplot(111)
 ax.set_title("Time-Varying A", fontsize=32)
 plot_errs(names, err_lss, ax=ax, shade=config.dataset_typ != "drone")
 
-plt.figure()
-plt.plot(preds_tf[1,:-1,1])
+fig = plt.figure(figsize=(15,9))
+ax = fig.add_subplot(111)
+ax.set_title("Time-Varying A", fontsize=32)
+plot_errs(["Subtracted Control"], [err_tf_cl], ax=ax, shade=config.dataset_typ != "drone")
 # os.makedirs("../figures", exist_ok=True)
 # fig.savefig(f"../figures/{config.dataset_typ}" + ("-changing" if config.changing else ""))
