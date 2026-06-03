@@ -77,6 +77,8 @@ def latest_ckpt(search_root=None):
         )
     return max(candidates, key=os.path.getmtime)
 
+print(latest_ckpt())
+
 model = GPT2.load_from_checkpoint(latest_ckpt(),
                                    n_dims_in=config.n_dims_in, n_positions=config.n_positions,
                                    n_dims_out=config.n_dims_out, n_embd=config.n_embd,
@@ -90,6 +92,7 @@ def processys(ys, n):
 
 exs, ys, sim_objs, us = [], [], [], []
 exs_cl, ys_cl = [], []
+As = []
 for i in range(1000): 
     if config.dataset_typ == "drone": 
         m, l, J = (2, 10), (11, 15), (1, 5) 
@@ -106,6 +109,7 @@ for i in range(1000):
     ys.append(entry["obs"])
     exs_cl.append(entry["statesCL"])
     ys_cl.append(entry["obsCL"])
+    As.append(entry["A"])
     sim_objs.append(sim_obj) 
           
 exs = np.array(exs)      
@@ -152,7 +156,17 @@ errs_tf = np.linalg.norm((exs-preds_tf), axis=-1)
 # errs_tf4 = np.linalg.norm((ys-preds_tf4), axis=-1)
 # errs_tf5 = np.linalg.norm((ys-preds_tf5), axis=-1)
 
-err_tf_cl = np.linalg.norm((exs_cl[:,:-1,:]-(preds_tf[:,:-1,:]-us)), axis=-1)
+# err_tf_cl = np.linalg.norm((exs_cl[:,:-1,:]-(preds_tf[:,:-1,:]-us)), axis=-1)
+S = np.zeros(us.shape, dtype=us.dtype)
+N, T, d = us.shape
+running = np.zeros((N, d), dtype=us.dtype)
+for t in range(T):
+    # running_n = A_n @ running_n + u_n,t   for each sample n
+    running = np.einsum('nij,nj->ni', As, running) + us[:, t, :]
+    S[:, t, :] = running
+    
+preds_adj = preds_tf.copy()
+preds_adj[:, 1:, :] -= S
 
 # errs_tf_cut = np.linalg.norm((ys_cut-preds_tf_cut), axis=-1)
 
@@ -190,12 +204,36 @@ names = ["MOP"]
 
 fig = plt.figure(figsize=(15,9))
 ax = fig.add_subplot(111)
-ax.set_title("Time-Varying A", fontsize=32)
+ax.set_title("Forced x_hat", fontsize=32)
 plot_errs(names, err_lss, ax=ax, shade=config.dataset_typ != "drone")
 
 fig = plt.figure(figsize=(15,9))
 ax = fig.add_subplot(111)
-ax.set_title("Time-Varying A", fontsize=32)
-plot_errs(["Subtracted Control"], [err_tf_cl], ax=ax, shade=config.dataset_typ != "drone")
+ax.set_title("Forced x_hat minus forcing", fontsize=32)
+plot_errs(["Adjusted - True Unforced"], [np.linalg.norm((exs_cl-preds_adj), axis=-1)], ax=ax, shade=config.dataset_typ != "drone")
 # os.makedirs("../figures", exist_ok=True)
 # fig.savefig(f"../figures/{config.dataset_typ}" + ("-changing" if config.changing else ""))
+
+pairs = np.column_stack([
+    np.random.randint(0, N, size=4),
+    np.random.randint(0, d, size=4)
+])
+
+fig, axs = plt.subplots(2, 2, figsize=(16, 12), sharex=True)
+axs = axs.ravel()
+
+for ax, (traj, st) in zip(axs, pairs):
+    l1, = ax.plot(preds_tf[traj, :, st], label="Transformer Prediction")
+    l2, = ax.plot(exs_cl[traj, :, st], label="True Unforced")
+    l3, = ax.plot(exs[traj, :, st], label="True Forced")
+    l4, = ax.plot(preds_adj[traj, :, st], label="Forcing Subtracted")
+    ax.set_title(f"traj={traj}, state={st}")
+    ax.grid(True, alpha=0.3)
+
+fig.suptitle("Random trajectory/state comparisons", fontsize=14)
+fig.legend([l1, l2, l3, l4],
+           ["Transformer Prediction", "True Unforced", "True Forced", "Forcing Subtracted"],
+           loc="upper center", ncol=4, bbox_to_anchor=(0.5, 0.98))
+
+fig.tight_layout(rect=[0, 0, 1, 0.93])
+plt.show()
