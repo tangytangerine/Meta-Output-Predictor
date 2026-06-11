@@ -122,9 +122,11 @@ with torch.no_grad():
     I = exs[:, :-1]
     if config.dataset_typ == "drone":
         I = np.concatenate([I, us], axis=-1)
+    else:
+        I = np.concatenate([I, us], axis=-1)
 
     if config.changing: # True and config.dataset_typ != "drone": #
-        preds_tf = model.predict_ar(exs[:, :-1])
+        preds_tf = model.predict_ar(I)
         # preds_tf2 = model2.predict_ar(exs[:, :-1])
         # preds_tf3 = model3.predict_ar(ys[:, :-1])
         # preds_tf4 = model4.predict_ar(ys[:, :-1])
@@ -150,6 +152,7 @@ with torch.no_grad():
         # _, preds_tf5 = model5.predict_step({"xs":torch.from_numpy(I).to(device)})
         # preds_tf5 = preds_tf5["preds"].cpu().numpy()
         # preds_tf5 = np.concatenate([np.zeros((preds_tf5.shape[0],1,preds_tf5.shape[-1])),preds_tf5], axis=1)
+preds_tf = preds_tf[:, :, :config.nx]
 errs_tf = np.linalg.norm((exs-preds_tf), axis=-1)
 # errs_tf2 = np.linalg.norm((exs-preds_tf2), axis=-1)
 # errs_tf3 = np.linalg.norm((ys-preds_tf3), axis=-1)

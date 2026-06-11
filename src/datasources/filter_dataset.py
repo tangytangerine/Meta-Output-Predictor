@@ -26,8 +26,9 @@ class FilterDataset(Dataset):
         entry = self.entries[idx % len(self.entries)].copy()
         
         if config.dataset_typ in ["ypred", "noniid", "upperTriA"]:
-            obs = entry.pop("states")
-            entry["xs"] = obs[:-1]
+            sta = entry.pop("states")
+            obs = entry.pop("obs")
+            entry["xs"] = sta
             entry["ys"] = obs[1:]
         elif config.dataset_typ == "drone":
             obs = entry.pop("obs")

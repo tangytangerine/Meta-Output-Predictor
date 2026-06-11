@@ -38,8 +38,8 @@ class Config(object, metaclass=Singleton):
     n_embd = 256
     n_layer = 12
     n_head = 8
-    n_dims_in = 10
-    n_dims_out = 10
+    n_dims_in = 20
+    n_dims_out = 20
     changing = False # only used for plotting
 
     # Optimizer parameters
