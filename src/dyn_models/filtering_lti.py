@@ -13,8 +13,26 @@ class FilterSim:
 
         self.n_noise = n_noise
         
+        def random_nonsymmetric_with_eigs(n, eig_low, eig_high, cond_max=1e3, seed=None, max_tries=10000):
+            rng = np.random.default_rng(seed)
+
+            eigs = rng.uniform(eig_low, eig_high, size=n)
+            Lambda = np.diag(eigs)
+
+            for _ in range(max_tries):
+                P = rng.normal(size=(n, n))
+                if np.linalg.matrix_rank(P) < n:
+                    continue
+
+                c = np.linalg.cond(P)
+                if c <= cond_max:
+                    A = P @ Lambda @ np.linalg.inv(P)
+                    return A
+
+            raise RuntimeError("Could not find a well-conditioned P within max_tries")
+        
         gen = np.random.default_rng()
-        lims = np.array([0.2, 0.9])
+        lims = np.array([0.5, 0.6])
 
         if tri:
             A = np.diag(gen.uniform(lims[0], lims[-1], (nx)))
@@ -22,10 +40,8 @@ class FilterSim:
             self.A = A
         else:
             # A = np.random.rand(nx, nx)
-            A = gen.uniform(0, 0.5, (nx, nx))
-            # A = gen.normal(0, 0.2, (nx, nx))+np.pi/2
-            A /= np.max(np.abs(np.linalg.eigvals(A)))
-            self.A = A * 0.95
+            A = random_nonsymmetric_with_eigs(nx, lims[0], lims[-1])
+            self.A = A
 
         self.C = np.eye(nx) if nx == ny else self.construct_C(self.A, ny)
     
@@ -41,7 +57,7 @@ class FilterSim:
         ys = [self.C @ xs[0]+ sum(vs)]
         ys_cl = [self.C @ xs_cl[0]+ sum(vs)]
         
-        ulims = np.array([0, 1])
+        ulims = np.array([-1, 1])
         us = []
         for _ in range(traj_len):
             u = np.random.uniform(ulims[0], ulims[1], size=nx)

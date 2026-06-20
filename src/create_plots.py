@@ -5,7 +5,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 import pytorch_lightning as pl
 import torch
-if torch.xpu.is_available(): import intel_extension_for_pytorch as ipex
+# if torch.xpu.is_available(): import intel_extension_for_pytorch as ipex
 
 from core import Config, training
 from models import GPT2
@@ -227,16 +227,16 @@ axs = axs.ravel()
 
 for ax, (traj, st) in zip(axs, pairs):
     l1, = ax.plot(preds_tf[traj, :, st], label="Transformer Prediction")
-    l2, = ax.plot(exs_cl[traj, :, st], label="True Unforced")
+    # l2, = ax.plot(exs_cl[traj, :, st], label="True Unforced")
     l3, = ax.plot(exs[traj, :, st], label="True Forced")
-    l4, = ax.plot(preds_adj[traj, :, st], label="Forcing Subtracted")
+    # l4, = ax.plot(preds_adj[traj, :, st], label="Forcing Subtracted")
     ax.set_title(f"traj={traj}, state={st}")
     ax.grid(True, alpha=0.3)
 
 fig.suptitle("Random trajectory/state comparisons", fontsize=14)
-fig.legend([l1, l2, l3, l4],
-           ["Transformer Prediction", "True Unforced", "True Forced", "Forcing Subtracted"],
-           loc="upper center", ncol=4, bbox_to_anchor=(0.5, 0.98))
+fig.legend([l1, l3],
+           ["Transformer Prediction", "True Forced"],
+           loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.98))
 
 fig.tight_layout(rect=[0, 0, 1, 0.93])
 plt.show()
