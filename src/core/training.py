@@ -26,7 +26,7 @@ def setup_train(model):
                     hashlib.md5(config.get_full_yaml().encode('utf-8')).hexdigest()[:6]
                     )
 
-        output_dir = '../outputs/' + identifier
+        output_dir = '../Meta-Output-Predictor/outputs/' + identifier
 
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)

@@ -32,9 +32,6 @@ if __name__ == "__main__":
         with concurrent.futures.ProcessPoolExecutor() as executor:
             for sample in tqdm(executor.map(generate_sample, range(num_tasks)),
                                total=num_tasks):
-                if config.dataset_typ != "drone":
-                    sample["states"] = np.concatenate([sample["states"][:-1], sample["inputs"]], axis=-1)
-                sample.pop("inputs", None)
                 sample.pop("statesCL", None)
                 sample.pop("obsCL", None)
                 samples.append(sample)

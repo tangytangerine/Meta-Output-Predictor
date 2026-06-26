@@ -28,8 +28,9 @@ class FilterDataset(Dataset):
         if config.dataset_typ in ["ypred", "noniid", "upperTriA"]:
             sta = entry.pop("states")
             obs = entry.pop("obs")
-            entry["xs"] = sta
-            entry["ys"] = obs[1:]
+            actions = entry.pop("inputs")
+            entry["xs"] = np.concatenate([sta[:-1], actions], axis=-1)
+            entry["ys"] = sta[1:]
         elif config.dataset_typ == "drone":
             obs = entry.pop("obs")
             actions = entry.pop("actions")

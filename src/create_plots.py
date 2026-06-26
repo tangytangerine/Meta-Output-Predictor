@@ -1,9 +1,17 @@
 import logging
 import os
 import glob
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# Set matplotlib backend to Agg to avoid Qt issues in headless environments
+import matplotlib
+matplotlib.use('Agg')
 
 import pytorch_lightning as pl
+
+# Set up output directory for figures
+figures_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "figures"))
+os.makedirs(figures_dir, exist_ok=True)
 import torch
 # if torch.xpu.is_available(): import intel_extension_for_pytorch as ipex
 
@@ -93,7 +101,7 @@ def processys(ys, n):
 exs, ys, sim_objs, us = [], [], [], []
 exs_cl, ys_cl = [], []
 As = []
-for i in range(1000): 
+for i in range(5000): 
     if config.dataset_typ == "drone": 
         m, l, J = (2, 10), (11, 15), (1, 5) 
         sim_obj, entry = generate_drone_sample(config.n_positions, m, l, J) 
@@ -209,13 +217,13 @@ fig = plt.figure(figsize=(15,9))
 ax = fig.add_subplot(111)
 ax.set_title("Forced x_hat", fontsize=32)
 plot_errs(names, err_lss, ax=ax, shade=config.dataset_typ != "drone")
+fig.savefig(os.path.join(figures_dir, f"{config.dataset_typ}" + ("-changing" if config.changing else "") + "_forced_xhat.png"))
 
 fig = plt.figure(figsize=(15,9))
 ax = fig.add_subplot(111)
 ax.set_title("Forced x_hat minus forcing", fontsize=32)
 plot_errs(["Adjusted - True Unforced"], [np.linalg.norm((exs_cl-preds_adj), axis=-1)], ax=ax, shade=config.dataset_typ != "drone")
-# os.makedirs("../figures", exist_ok=True)
-# fig.savefig(f"../figures/{config.dataset_typ}" + ("-changing" if config.changing else ""))
+fig.savefig(os.path.join(figures_dir, f"{config.dataset_typ}" + ("-changing" if config.changing else "") + "_forced_xhat_minus_forcing.png"))
 
 pairs = np.column_stack([
     np.random.randint(0, N, size=4),
@@ -239,4 +247,5 @@ fig.legend([l1, l3],
            loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.98))
 
 fig.tight_layout(rect=[0, 0, 1, 0.93])
-plt.show()
+fig.savefig(os.path.join(figures_dir, f"{config.dataset_typ}" + ("-changing" if config.changing else "") + "_comparison.png"))
+print(f"Figures saved to {figures_dir}/ directory")

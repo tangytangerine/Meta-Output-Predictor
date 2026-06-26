@@ -52,8 +52,13 @@ class GPT2(BaseModel):
 
     def calculate_losses_and_metrics(self, input_dict, intermediate_dict):
         # Calculate loss
-        ys = input_dict["xs"]
+        ys = input_dict["ys"]
         preds = intermediate_dict["preds"]
+        
+        # # Only penalize first 10 horizontal elements
+        # ys = ys[:, :, :10]
+        # preds = preds[:, :, :10]
+        
         if config.dataset_typ == "pendulum":
             ys[..., 0] = ys[..., 0] % (2 * torch.pi)
             preds[..., 0] = preds[..., 0] % (2 * torch.pi)

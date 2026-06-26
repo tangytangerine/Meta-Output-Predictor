@@ -32,7 +32,7 @@ class FilterSim:
             raise RuntimeError("Could not find a well-conditioned P within max_tries")
         
         gen = np.random.default_rng()
-        lims = np.array([0.5, 0.6])
+        lims = np.array([0.2, 0.9])
 
         if tri:
             A = np.diag(gen.uniform(lims[0], lims[-1], (nx)))
@@ -57,7 +57,7 @@ class FilterSim:
         ys = [self.C @ xs[0]+ sum(vs)]
         ys_cl = [self.C @ xs_cl[0]+ sum(vs)]
         
-        ulims = np.array([-1, 1])
+        ulims = np.array([3,4])
         us = []
         for _ in range(traj_len):
             u = np.random.uniform(ulims[0], ulims[1], size=nx)
