@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 """
-Simplified Meta-Output Predictor - Jupyter Notebook Compatible Script
+Simplified Meta-Output Predictor with Mamba SSM - Jupyter Notebook Compatible Script
 
 This is a Python script that can be converted to a Jupyter notebook using jupytext.
 It implements the core functionalities:
 1. Generate training and validation trajectories with configurable system dynamics, noise, and input
-2. Train a transformer model on those trajectories
+2. Train a Mamba SSM model on those trajectories
 3. Generate test trajectories with different parameters
-4. Test the transformer on those test trajectories
+4. Test the Mamba SSM on those test trajectories
 
 This ignores the drone case and focuses on the LTI filtering system.
 
 To use as a Jupyter notebook:
     1. Install jupytext: pip install jupytext
-    2. Convert to notebook: jupytext --to notebook simplified_notebook.py
-    3. Open in Jupyter: jupyter notebook simplified_notebook.ipynb
+    2. Convert to notebook: jupytext --to notebook simplified_notebook_mamba.py
+    3. Open in Jupyter: jupyter notebook simplified_notebook_mamba.ipynb
 
 Or run directly as a script:
-    python simplified_notebook.py
+    python simplified_notebook_mamba.py
 """
 
 # %% [markdown]
-# Simplified Meta-Output Predictor Notebook
+# Simplified Meta-Output Predictor Notebook with Mamba SSM
 # %%
 """
 Simplified Jupyter notebook that implements the core functionalities:
 1. Generate training and validation trajectories with configurable system dynamics, noise, and input
-2. Train a transformer model on those trajectories
+2. Train a Mamba SSM model on those trajectories
 3. Generate test trajectories with different parameters
-4. Test the transformer on those test trajectories
+4. Test the Mamba SSM on those test trajectories
 
 This ignores the drone case and focuses on the LTI filtering system.
 """
@@ -48,7 +48,7 @@ from tqdm import tqdm
 import random
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule
-from transformers import MistralModel, MistralConfig
+from mamba_ssm import Mamba
 from filterpy.kalman import KalmanFilter
 
 # Set random seeds for reproducibility
@@ -177,6 +177,11 @@ class FilterSim:
                 np.array(inputs, dtype=np.float32))
 
 
+# %% [markdown]
+# Kalman Filter Functions
+# %%
+
+
 def apply_kalman_filter(fsim, obs, inputs=None, x0=None, P0=None, sigma_w=None, sigma_v=None):
     """
     Apply Kalman filter to a trajectory's observations with control inputs.
@@ -273,6 +278,7 @@ def generate_trajectory(nx=10, ny=5, traj_len=50, sigma_w=0.1, sigma_v=0.1,
         'sigma_v': sigma_v
     }
 
+
 # %% [markdown]
 # 3. Dataset Preparation
 # %%
@@ -346,30 +352,32 @@ def create_datasets(num_train=1000, num_val=200, traj_len=50,
     
     return TrajectoryDataset(train_traj), TrajectoryDataset(val_traj)
 
+
 # %% [markdown]
-# 4. Transformer Model
+# 4. Mamba SSM Model
 # %%
 
 
-class LitTransformer(LightningModule):
+class LitMamba(LightningModule):
     """
-    Transformer model using HuggingFace Mistral for sequence prediction.
+    Mamba SSM model for sequence prediction.
     Trained with PyTorch Lightning.
-    Based on the original repository's approach.
+    Based on the original repository's approach but using Mamba instead of Transformer.
     """
     
     def __init__(self, input_dim, output_dim, n_positions=50, 
-                 n_embd=256, n_layer=8, n_head=6, dropout=0.15,
+                 d_model=256, n_layers=4, d_state=16, d_conv=4, expand=2,
                  learning_rate=1e-4, weight_decay=1e-4, gradient_clip=1.0):
         """
         Args:
             input_dim: dimension of input features
             output_dim: dimension of output (state dimension)
             n_positions: maximum sequence length
-            n_embd: embedding dimension
-            n_layer: number of transformer layers
-            n_head: number of attention heads
-            dropout: dropout rate
+            d_model: model dimension
+            n_layers: number of Mamba layers
+            d_state: state dimension for Mamba
+            d_conv: convolution dimension for Mamba
+            expand: expansion factor for Mamba
             learning_rate: learning rate for optimizer
             weight_decay: weight decay for optimizer
             gradient_clip: gradient clipping value
@@ -380,33 +388,26 @@ class LitTransformer(LightningModule):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.n_positions = n_positions
-        self.n_embd = n_embd
+        self.d_model = d_model
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.gradient_clip = gradient_clip
         
-        # Input embedding (projects input features to embedding dimension)
-        self.embed = nn.Linear(input_dim, n_embd)
+        # Input projection to model dimension
+        self.input_proj = nn.Linear(input_dim, d_model)
         
-        # Mistral configuration
-        mistral_config = MistralConfig(
-            vocab_size=1,  # Not used, we have our own embeddings
-            max_position_embeddings=n_positions,
-            hidden_size=n_embd,
-            num_hidden_layers=n_layer,
-            num_attention_heads=n_head,
-            num_key_value_heads=n_head,  # Mistral uses GQA by default
-            intermediate_size=n_embd * 4,  # Typical for Mistral
-            hidden_dropout=dropout,
-            attention_dropout=dropout,
-            use_cache=False,
-        )
-        
-        # Mistral model (without the final LM head)
-        self.transformer = MistralModel(mistral_config)
+        # Mamba SSM layers
+        self.mamba_layers = nn.ModuleList([
+            Mamba(
+                d_model=d_model,
+                d_state=d_state,
+                d_conv=d_conv,
+                expand=expand
+            ) for _ in range(n_layers)
+        ])
         
         # Output projection
-        self.output_proj = nn.Linear(n_embd, output_dim)
+        self.output_proj = nn.Linear(d_model, output_dim)
         
         # Loss function
         self.criterion = nn.MSELoss()
@@ -421,19 +422,19 @@ class LitTransformer(LightningModule):
         """
         batch_size, seq_len, _ = xs.shape
         
-        # Input embedding
-        x = self.embed(xs)
+        # Input projection
+        x = self.input_proj(xs)  # (batch_size, seq_len, d_model)
         
         # Truncate if sequence is too long
         if seq_len > self.n_positions:
             x = x[:, -self.n_positions:]
         
-        # Mistral expects inputs_embeds, not tokenizer input
-        # Mistral has built-in positional embeddings and causal mask
-        output = self.transformer(inputs_embeds=x).last_hidden_state
+        # Apply Mamba layers
+        for layer in self.mamba_layers:
+            x = layer(x)
         
         # Output projection
-        preds = self.output_proj(output)
+        preds = self.output_proj(x)
         
         return preds
     
@@ -487,12 +488,13 @@ class LitTransformer(LightningModule):
             'clip_value': self.gradient_clip,
         }
 
+
 # %% [markdown]
 # 5. Training Setup
 # %%
 
 
-class TransformerDataModule(pl.LightningDataModule):
+class SequenceDataModule(pl.LightningDataModule):
     """Lightning data module for trajectory data."""
     
     def __init__(self, train_dataset, val_dataset=None, batch_size=32, num_workers=4):
@@ -536,108 +538,56 @@ class TransformerDataModule(pl.LightningDataModule):
             )
         return None
 
+
 # %% [markdown]
-# 6. Testing and Evaluation
+# 6. Save and Load Model
 # %%
 
 
-def evaluate_model(model, dataset, batch_size=32):
-    """
-    Evaluate model on a dataset.
+def save_model(model, path='mamba_meta_output_predictor.pth', config=None):
+    """Save the trained model."""
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'config': config
+    }, path)
+    print(f"Model saved to {path}")
+
+
+def load_model(path='mamba_meta_output_predictor.pth', config=None):
+    """Load a saved model."""
+    checkpoint = torch.load(path, map_location=device)
     
-    Args:
-        model: trained LitTransformer
-        dataset: TrajectoryDataset to evaluate on
-        batch_size: batch size for evaluation
-        
-    Returns:
-        average MSE loss
-    """
+    if config is None:
+        config = checkpoint.get('config', {})
+    
+    input_dim = config.get('nx', 10) + config.get('nx', 10)
+    output_dim = config.get('nx', 10)
+    
+    model = LitMamba(
+        input_dim=input_dim,
+        output_dim=output_dim,
+        n_positions=config.get('n_positions', 50),
+        d_model=config.get('d_model', 256),
+        n_layers=config.get('n_layers', 4),
+        d_state=config.get('d_state', 16),
+        d_conv=config.get('d_conv', 4),
+        expand=config.get('expand', 2),
+        learning_rate=config.get('learning_rate', 1e-4),
+        weight_decay=config.get('weight_decay', 1e-4),
+        gradient_clip=config.get('gradient_clip', 1.0)
+    )
+    
+    model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
     model.eval()
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    
-    criterion = nn.MSELoss()
-    total_loss = 0.0
-    num_batches = 0
-    
-    with torch.no_grad():
-        for batch in loader:
-            xs = batch['xs'].to(device)
-            ys = batch['ys'].to(device)
-            
-            preds = model(xs)
-            min_len = min(preds.shape[1], ys.shape[1])
-            loss = criterion(preds[:, :min_len], ys[:, :min_len])
-            
-            total_loss += loss.item()
-            num_batches += 1
-    
-    return total_loss / num_batches
-
-
-def generate_test_trajectories(num_test=100, traj_len=50, nx=10, ny=5,
-                                sigma_w=0.2, sigma_v=0.2, 
-                                input_lower=0.0, input_upper=2.0,
-                                eig_low=0.5, eig_high=0.8):
-    """
-    Generate test trajectories with potentially different parameters than training.
-    
-    Args:
-        num_test: number of test trajectories
-        traj_len: length of each trajectory
-        nx, ny: state and output dimensions
-        sigma_w, sigma_v: noise parameters (can differ from training)
-        input_lower, input_upper: control input range (can differ from training)
-        eig_low, eig_high: eigenvalue range for system matrix (can differ from training)
-        
-    Returns:
-        TrajectoryDataset with test trajectories
-    """
-    print(f"\nGenerating {num_test} test trajectories with different parameters...")
-    test_traj = [
-        generate_trajectory(nx=nx, ny=ny, traj_len=traj_len,
-                           sigma_w=sigma_w, sigma_v=sigma_v,
-                           input_lower=input_lower, input_upper=input_upper,
-                           eig_low=eig_low, eig_high=eig_high)
-        for _ in tqdm(range(num_test))
-    ]
-    return TrajectoryDataset(test_traj)
-
-
-def plot_results(history, test_loss=None, save_path=None):
-    """Plot training and validation loss."""
-    plt.figure(figsize=(12, 5))
-    
-    plt.subplot(1, 2, 1)
-    plt.plot(history['train_loss'], label='Train Loss')
-    if 'val_loss' in history and history['val_loss']:
-        plt.plot(history['val_loss'], label='Val Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('MSE Loss')
-    plt.legend()
-    plt.title('Training History')
-    
-    if test_loss is not None:
-        plt.subplot(1, 2, 2)
-        plt.bar(['Test Loss'], [test_loss])
-        plt.title('Test Performance')
-    
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path)
-        print(f"Plot saved to {save_path}")
-    else:
-        try:
-            plt.show()
-        except:
-            # Non-interactive backend, skip show
-            pass
+    print(f"Model loaded from {path}")
+    return model, config
 
 
 # %% [markdown]
-# 7. Putting It All Together
+# 7. Training and Evaluation Main Execution
 # %%
+
 
 # Configuration parameters
 CONFIG = {
@@ -669,10 +619,11 @@ CONFIG = {
     
     # Model parameters
     'n_positions': 50,   # Maximum sequence length
-    'n_embd': 128,        # Embedding dimension
-    'n_layer': 6,         # Number of transformer layers
-    'n_head': 4,          # Number of attention heads
-    'dropout': 0.15,       # Dropout rate
+    'd_model': 256,        # Model dimension
+    'n_layers': 4,         # Number of Mamba layers
+    'd_state': 16,          # State dimension for Mamba
+    'd_conv': 4,           # Convolution dimension for Mamba
+    'expand': 2,            # Expansion factor for Mamba
     
     # Training parameters
     'batch_size': 32,
@@ -680,12 +631,19 @@ CONFIG = {
     'learning_rate': 1e-4,
     'weight_decay': 1e-4,
     'gradient_clip': 1.0,
+    
+    # Output paths
+    'save_model': None,
+    'save_plot': 'results_mamba.png',
 }
 
 print("="*60)
-print("SIMPLE META-OUTPUT PREDICTOR")
+print("SIMPLE MAMBA META-OUTPUT PREDICTOR")
 print("="*60)
-print(f"Configuration: {CONFIG}")
+print("Configuration:")
+for key, value in CONFIG.items():
+    if not key.startswith('save_'):
+        print(f"  {key}: {value}")
 print()
 
 # Step 1: Create datasets
@@ -704,6 +662,14 @@ train_dataset, val_dataset = create_datasets(
     eig_high=CONFIG['eig_high_train']
 )
 
+# Create data loaders
+train_loader = DataLoader(train_dataset, 
+                          batch_size=CONFIG['batch_size'],
+                          shuffle=True)
+val_loader = DataLoader(val_dataset, 
+                        batch_size=CONFIG['batch_size'],
+                        shuffle=False)
+
 print(f"Train dataset: {len(train_dataset)} trajectories")
 print(f"Val dataset: {len(val_dataset)} trajectories")
 
@@ -712,14 +678,15 @@ print("\n[2/4] Creating model...")
 input_dim = CONFIG['nx'] + CONFIG['nx']  # state + input dimensions
 output_dim = CONFIG['nx']  # predict next state
 
-model = LitTransformer(
+model = LitMamba(
     input_dim=input_dim,
     output_dim=output_dim,
     n_positions=CONFIG['n_positions'],
-    n_embd=CONFIG['n_embd'],
-    n_layer=CONFIG['n_layer'],
-    n_head=CONFIG['n_head'],
-    dropout=CONFIG['dropout'],
+    d_model=CONFIG['d_model'],
+    n_layers=CONFIG['n_layers'],
+    d_state=CONFIG['d_state'],
+    d_conv=CONFIG['d_conv'],
+    expand=CONFIG['expand'],
     learning_rate=CONFIG['learning_rate'],
     weight_decay=CONFIG['weight_decay'],
     gradient_clip=CONFIG['gradient_clip']
@@ -732,7 +699,7 @@ print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 print("\n[3/4] Training model with PyTorch Lightning...")
 
 # Create data module
-datamodule = TransformerDataModule(
+datamodule = SequenceDataModule(
     train_dataset=train_dataset,
     val_dataset=val_dataset,
     batch_size=CONFIG['batch_size'],
@@ -753,17 +720,26 @@ trainer = pl.Trainer(
 # Train
 trainer.fit(model, datamodule=datamodule)
 
-# Get training history
+# Get training history from Lightning logger
+# Access the logged metrics
 history = {
     'train_loss': [],
     'val_loss': []
 }
+if hasattr(trainer, 'logger') and trainer.logger is not None:
+    # Try to extract metrics from logger
+    pass  # Metrics are logged automatically by Lightning
 print(f"Training complete. Best val loss: {trainer.callback_metrics.get('val_loss', float('inf')):.6f}")
 
-# Use the trained model
+# Save the trained model
 trained_model = model
 
-# Step 4: Test with different parameters
+# %% [markdown]
+# 8. Testing with Different Parameters
+# %%
+
+
+# Generate test trajectories with different parameters
 print("\n[4/4] Testing with different parameters...")
 test_dataset = generate_test_trajectories(
     num_test=CONFIG['num_test'],
@@ -785,15 +761,13 @@ test_loss = test_results[0]['test_loss']
 print(f"\nTest Loss (with different parameters): {test_loss:.6f}")
 
 # Plot results
-plot_results(history, test_loss=test_loss)
-
-print("\n" + "="*60)
-print("Training and evaluation complete!")
-print("="*60)
+print("\nGenerating plots...")
+plot_results(history, test_loss=test_loss, save_path='results_mamba.png')
 
 # %% [markdown]
-# 8. Example: Generate and Test Multiple Trajectories
+# 9. Example: Generate and Test Multiple Trajectories
 # %%
+
 
 # Generate 1000 test trajectories
 print("\nGenerating 1000 test trajectories for visualization...")
@@ -842,15 +816,17 @@ for idx, traj_idx in enumerate(sampled_indices):
     actual_pred_len = preds.shape[0]
     actual_state_len = min(actual_pred_len, states_true[1:].shape[0])
     
-    # Randomly select a state dimension to plot
-    nx = CONFIG['nx']
-    ny = CONFIG['ny']
-    # Select from dimensions that are observable (0 to ny-1)
-    state_dim = np.random.randint(0, ny)
-    
     # Get Kalman filter predictions
     kf_states = apply_kalman_filter_from_traj(test_traj)
     kf_preds = kf_states[1:]  # KF predictions start from step 1
+    
+    # Randomly select a state dimension to plot
+    nx = CONFIG['nx']
+    ny = CONFIG['ny']
+    # For plotting, select a dimension that exists in observation space
+    # so we can show the observation alongside the state
+    # Select from dimensions that are observable (0 to ny-1)
+    state_dim = np.random.randint(0, ny)
     
     # Store data for trajectory plot
     plot_data.append({
@@ -871,7 +847,7 @@ plt.figure(figsize=(15, 10))
 for idx, data in enumerate(plot_data):
     plt.subplot(2, 2, idx+1)
     plt.plot(data['states_true'], label='True State', linewidth=2)
-    plt.plot(data['preds'], '--', label='Transformer Predicted', linewidth=2)
+    plt.plot(data['preds'], '--', label='Mamba Predicted', linewidth=2)
     plt.plot(data['kf_preds'], ':', label='Kalman Filter', linewidth=2)
     plt.plot(data['obs'], ':', label='Observation', alpha=0.5, linewidth=1.5)
     plt.xlabel('Time Step')
@@ -881,8 +857,8 @@ for idx, data in enumerate(plot_data):
     plt.grid(True, alpha=0.3)
 plt.suptitle('True States vs Predicted States vs Kalman Filter vs Noisy Observations (Random Sample)', y=1.02)
 plt.tight_layout()
-plt.savefig('results_traj.png')
-print("Trajectory plot saved to results_traj.png")
+plt.savefig('results_traj_mamba.png')
+print("Trajectory plot saved to results_traj_mamba.png")
 plt.close()
 
 # Compute average MSE across the 4 sampled trajectories
@@ -945,14 +921,14 @@ avg_kf_err_all = kf_traj_errs_sum.mean()
 
 # Create Figure 2: Error vs time step plot - single averaged curve with error band
 plt.figure(figsize=(15, 5))
-plt.plot(avg_per_timestep_err, label='Transformer Error', linewidth=2, color='blue')
+plt.plot(avg_per_timestep_err, label='Mamba Error', linewidth=2, color='blue')
 plt.fill_between(
     range(min_length),
     avg_per_timestep_err - std_per_timestep_err,
     avg_per_timestep_err + std_per_timestep_err,
     color='blue',
     alpha=0.2,
-    label='Transformer ±1 std. dev.'
+    label='Mamba ±1 std. dev.'
 )
 plt.plot(avg_kf_per_timestep_err, label='Kalman Filter Error', linewidth=2, color='green')
 plt.fill_between(
@@ -969,102 +945,27 @@ plt.title('Average L2 Error vs Time Step (Across All 1000 Trajectories)')
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig('results_mse_vs_time.png')
-print("MSE vs Time plot saved to results_mse_vs_time.png")
+plt.savefig('results_mse_vs_time_mamba.png')
+print("MSE vs Time plot saved to results_mse_vs_time_mamba.png")
 plt.close()
 
-print(f"\nAverage Transformer Error across ALL 1000 trajectories: {avg_err_all:.2f}")
+print(f"\nAverage Mamba Error across ALL 1000 trajectories: {avg_err_all:.2f}")
 print(f"Average Kalman Filter Error across ALL 1000 trajectories: {avg_kf_err_all:.2f}")
 print(f"Observation noise level (sigma_v): {CONFIG['sigma_v_test']:.2f}")
 print(f"Process noise level (sigma_w): {CONFIG['sigma_w_test']:.2f}")
 
 # Save main results plot
-plot_results(history, test_loss=test_loss, save_path='results.png')
+plot_results(history, test_loss=test_loss, save_path='results_mamba.png')
 
 # %% [markdown]
 # 9. Save and Load Model (Optional)
 # %%
 
 
-def save_model(model, path='meta_output_predictor.pth', config=None):
-    """Save the trained model."""
-    if config is None:
-        config = CONFIG
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'config': config
-    }, path)
-    print(f"Model saved to {path}")
+# Save model if requested
+if CONFIG['save_model']:
+    save_model(trained_model, CONFIG['save_model'], config=CONFIG)
 
-def load_model(path='meta_output_predictor.pth', config=None):
-    """Load a saved model."""
-    checkpoint = torch.load(path, map_location=device)
-    
-    if config is None:
-        config = checkpoint.get('config', CONFIG)
-    
-    input_dim = config['nx'] + config['nx']
-    output_dim = config['nx']
-    
-    model = LitTransformer(
-        input_dim=input_dim,
-        output_dim=output_dim,
-        n_positions=config['n_positions'],
-        n_embd=config['n_embd'],
-        n_layer=config['n_layer'],
-        n_head=config['n_head'],
-        dropout=config['dropout'],
-        learning_rate=config.get('learning_rate', 1e-4),
-        weight_decay=config.get('weight_decay', 1e-4),
-        gradient_clip=config.get('gradient_clip', 1.0)
-    )
-    
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model = model.to(device)
-    model.eval()
-    print(f"Model loaded from {path}")
-    return model, config
-
-# Uncomment to save the trained model
-# save_model(trained_model)
-
-# Uncomment to load a saved model
-# loaded_model, loaded_config = load_model()
-
-# %% [markdown]
-# Summary
-# %%
-
-"""
-This simplified script provides:
-
-1. **Configurable LTI System**: The `FilterSim` class allows you to generate trajectories with different:
-   - State and output dimensions (nx, ny)
-   - Process and measurement noise levels (sigma_w, sigma_v)
-   - Control input scales
-   - System matrices (A, C) can be specified or randomly generated
-
-2. **Transformer Model**: A Mistral-based transformer that:
-   - Takes sequences of (observation, input) pairs as input
-   - Predicts future states
-
-3. **Training Pipeline**: Complete training with:
-   - Training and validation datasets
-   - Loss tracking
-   - Gradient clipping
-   - AdamW optimizer with weight decay
-
-4. **Testing with Different Parameters**: The key feature - testing the trained model on trajectories 
-   with different system parameters than it was trained on, demonstrating meta-learning capabilities.
-
-5. **Visualization**: Plotting of training curves and trajectory comparisons.
-
-The script ignores the drone case as requested and focuses on the core LTI filtering system functionality.
-
-To use as a Jupyter notebook:
-    1. Install jupytext: pip install jupytext
-    2. Convert to notebook: jupytext --to notebook simplified_notebook.py
-    3. Open in Jupyter: jupyter notebook simplified_notebook.ipynb
-
-Or run directly: python simplified_notebook.py
-"""
+print("\n" + "="*60)
+print("Training and evaluation complete!")
+print("="*60)
