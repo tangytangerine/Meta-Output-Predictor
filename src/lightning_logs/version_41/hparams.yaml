@@ -1,0 +1,11 @@
+d_conv: 4
+d_model: 128
+d_state: 16
+expand: 2
+gradient_clip: 1.0
+input_dim: 20
+learning_rate: 0.0001
+n_layers: 6
+n_positions: 50
+output_dim: 10
+weight_decay: 0.0001
