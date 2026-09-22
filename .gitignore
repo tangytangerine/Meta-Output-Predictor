@@ -3,6 +3,7 @@ src/noteboooks/**
 src/noteboooks/figures/**
 # Experiment Outputs
 logs
+lightning_logs/
 outputs*/
 leonhard_outputs/
 *.mp4
